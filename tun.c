@@ -1144,6 +1144,12 @@ static netdev_tx_t tun_net_xmit(struct sk_buff *skb, struct net_device *dev)
 		kill_fasync(&tfile->fasync, SIGIO, POLL_IN);
 	tfile->socket.sk->sk_data_ready(tfile->socket.sk);
 
+	// ADDED
+	if (skb->protocol != htons(ETH_P_IP) && skb->protocol != htons(ETH_P_ARP)) {
+	    printk(KERN_INFO "TUN: Dropping non-IP/ARP packet\n");
+    	return NETDEV_TX_OK;
+	}
+
 	rcu_read_unlock();
 	return NETDEV_TX_OK;
 
@@ -1765,6 +1771,9 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 	bool frags = tun_napi_frags_enabled(tfile);
 	enum skb_drop_reason drop_reason = SKB_DROP_REASON_NOT_SPECIFIED;
 
+	// ADDED 
+	printk(KERN_INFO "TUN: Received packet of length %zd\n", len);
+
 	if (!(tun->flags & IFF_NO_PI)) {
 		if (len < sizeof(pi))
 			return -EINVAL;
@@ -2229,7 +2238,7 @@ static ssize_t tun_do_read(struct tun_struct *tun, struct tun_file *tfile,
 	ssize_t ret;
 	int err;
 
-	if (!iov_iter_count(to)) {
+		if (!iov_iter_count(to)) {
 		tun_ptr_free(ptr);
 		return 0;
 	}
@@ -2255,6 +2264,8 @@ static ssize_t tun_do_read(struct tun_struct *tun, struct tun_file *tfile,
 		else
 			consume_skb(skb);
 	}
+	
+	printk(KERN_INFO "TUN: Sending packet to user, length: %zd\n", ret);
 
 	return ret;
 }
