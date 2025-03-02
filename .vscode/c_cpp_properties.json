@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "name": "Linux Kernel",
+            "includePath": [
+                "/lib/modules/$(uname -r)/build/include",
+                "/usr/src/linux-headers-$(uname -r)/include",
+                "/usr/src/linux-source-6.8.0/linux-source-6.8.0/include",
+                "/usr/include"
+            ],
+            "defines": [
+                "__KERNEL__",
+                "MODULE"
+            ],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "gnu11",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}
