@@ -664,7 +664,187 @@ make[4]: *** Waiting for unfinished jobs....
 
 I think we might have some confusion here.  I'm not so sure I put those changes into the same tun.c that the load build is working on.  I suspect I made the changes in the current kernel version, not my local one.  After all our reloading and stuff I bet I have an old one.  I'm going to use VSCode to get the latest tun.c, and I'll bet it's different.  What the compiler complains about seems to be about 3 lines off of what the editor is displaying.
 
+It says the line 2241 is the problem.
 
+static ssize_t tun_do_read(struct tun_struct *tun, struct tun_file *tfile,
+			   struct iov_iter *to,
+			   int noblock, void *ptr)
+{
+	ssize_t ret;  /*  <-----------  I changed the printk below from length to this ret */
+	int err;
 
+		if (!iov_iter_count(to)) {    /* <------  This is line 2241 in VSCode version */
+		tun_ptr_free(ptr);
+		return 0;
+	}
+
+	if (!ptr) {
+		/* Read frames from ring */
+		ptr = tun_ring_recv(tfile, noblock, &err);
+		if (!ptr)
+			return err;
+	}
+
+	if (tun_is_xdp_frame(ptr)) {
+		struct xdp_frame *xdpf = tun_ptr_to_xdp(ptr);
+
+		ret = tun_put_user_xdp(tun, tfile, xdpf, to);
+		xdp_return_frame(xdpf);
+	} else {
+		struct sk_buff *skb = ptr;
+
+		ret = tun_put_user(tun, tfile, skb, to);
+		if (unlikely(ret < 0))
+			kfree_skb(skb);
+		else
+			consume_skb(skb);
+	}
+	
+	printk(KERN_INFO "TUN: Sending packet to user, length: %zd\n", ret); /* <---- ret used to be length */
+
+	return ret;
+}
+
+See that if statement that's line 2241?  And see that ret above it?  I used to have the printk line up at the top too.  So now I'm confused over what's happening and which tun.c is getting in the build, the one in the kernel directory or the one that I've got in VSCode.  The directory I run the make commands you give me to run I've been running in this directory actually:
+
+/usr/src/linux-source-6.8.0/linux-source-6.8.0# 
+
+It's been what's been making certain things work but maybe I've gotten confused over what commands I should run in what directories a too.
+
+What would you advise I do next at this point?  Can you please assess our status and let's just make sure we have a plan and that we're making progress.
+
+////////////////////////////
+
+The very last one is mine in /usr/local/tap.  I got it from  here:
+
+/usr/src/linux-source-6.8.0/linux-source-6.8.0/drivers/net/tun.c:
+
+This is the one I have in VSCode, which is that last one below.  My edited, modified tun.c is supposed to replace that one in /drivers/:
+
+root@PRED:/usr/src/linux-source-6.8.0/linux-source-6.8.0# find /usr/src/linux-source-6.8.0 -name "tun.c"
+/usr/src/linux-source-6.8.0/linux-source-6.8.0/tools/testing/selftests/net/tun.c
+/usr/src/linux-source-6.8.0/linux-source-6.8.0/drivers/net/ethernet/mellanox/mlx5/core/en/tc/act/tun.c
+/usr/src/linux-source-6.8.0/linux-source-6.8.0/drivers/net/tun.c
+/usr/src/linux-source-6.8.0/linux-source-6.8.0/net/qrtr/tun.c
+root@PRED:/usr/src/linux-source-6.8.0/linux-source-6.8.0# find /usr/local -name "tun.c"
+/usr/local/tap/tun.c
+root@PRED:/usr/src/linux-source-6.8.0/linux-source-6.8.0# 
+
+So it's good we're getting to the bottom of it.  Let's work our workflow so that my edits effect the proper file, at least eventually some time before the make process.  Will I need to start running the load build and the make commands from my own directory and use my own Makefile, that somehow ties in with the kernel make and build stuff, or do I not use my own make file and just participate in the existing make mechansim that's in place with the kernel already?
+
+What's next?  This is great fun and powerful.  I should be able to control my own computer completely.
+
+//////////////////////////////////
+
+Here's the errors now.  We're making progress:
+
+root@PRED:/usr/src/linux-source-6.8.0/linux-source-6.8.0# cd /usr/src/linux-source-6.8.0/linux-source-6.8.0
+make -j$(nproc) bzImage    # Build the kernel image
+make -j$(nproc) modules    # Build all modules
+make modules_install       # Install the modules
+make -j$(nproc)            # Ensure everything is built
+make install               # Install the kernel
+mkdir -p /usr/src/linux-source-6.8.0/linux-source-6.8.0/tools/objtool && make O=/usr/src/linux-source-6.8.0/linux-source-6.8.0 subdir=tools/objtool --no-print-directory -C objtool 
+mkdir -p /usr/src/linux-source-6.8.0/linux-source-6.8.0/tools/bpf/resolve_btfids && make O=/usr/src/linux-source-6.8.0/linux-source-6.8.0 subdir=tools/bpf/resolve_btfids --no-print-directory -C bpf/resolve_btfids 
+  INSTALL libsubcmd_headers
+  INSTALL libsubcmd_headers
+  CALL    scripts/checksyscalls.sh
+make[3]: *** No rule to make target 'debian/canonical-certs.pem', needed by 'certs/x509_certificate_list'.  Stop.
+make[2]: *** [scripts/Makefile.build:481: certs] Error 2
+make[2]: *** Waiting for unfinished jobs....
+make[1]: *** [/usr/src/linux-source-6.8.0/linux-source-6.8.0/Makefile:1925: .] Error 2
+make: *** [Makefile:240: __sub-make] Error 2
+mkdir -p /usr/src/linux-source-6.8.0/linux-source-6.8.0/tools/objtool && make O=/usr/src/linux-source-6.8.0/linux-source-6.8.0 subdir=tools/objtool --no-print-directory -C objtool 
+mkdir -p /usr/src/linux-source-6.8.0/linux-source-6.8.0/tools/bpf/resolve_btfids && make O=/usr/src/linux-source-6.8.0/linux-source-6.8.0 subdir=tools/bpf/resolve_btfids --no-print-directory -C bpf/resolve_btfids 
+  INSTALL libsubcmd_headers
+  INSTALL libsubcmd_headers
+  CALL    scripts/checksyscalls.sh
+make[3]: *** No rule to make target 'debian/canonical-certs.pem', needed by 'certs/x509_certificate_list'.  Stop.
+make[2]: *** [scripts/Makefile.build:481: certs] Error 2
+make[2]: *** Waiting for unfinished jobs....
+make[1]: *** [/usr/src/linux-source-6.8.0/linux-source-6.8.0/Makefile:1925: .] Error 2
+make: *** [Makefile:240: __sub-make] Error 2
+  SYMLINK /lib/modules/6.8.12/build
+make[2]: *** No rule to make target 'modules.order', needed by '/lib/modules/6.8.12/modules.order'.  Stop.
+make[1]: *** [/usr/src/linux-source-6.8.0/linux-source-6.8.0/Makefile:1833: modules_install] Error 2
+make: *** [Makefile:240: __sub-make] Error 2
+mkdir -p /usr/src/linux-source-6.8.0/linux-source-6.8.0/tools/objtool && make O=/usr/src/linux-source-6.8.0/linux-source-6.8.0 subdir=tools/objtool --no-print-directory -C objtool 
+mkdir -p /usr/src/linux-source-6.8.0/linux-source-6.8.0/tools/bpf/resolve_btfids && make O=/usr/src/linux-source-6.8.0/linux-source-6.8.0 subdir=tools/bpf/resolve_btfids --no-print-directory -C bpf/resolve_btfids 
+  INSTALL libsubcmd_headers
+  INSTALL libsubcmd_headers
+  CALL    scripts/checksyscalls.sh
+make[3]: *** No rule to make target 'debian/canonical-certs.pem', needed by 'certs/x509_certificate_list'.  Stop.
+make[2]: *** [scripts/Makefile.build:481: certs] Error 2
+make[2]: *** Waiting for unfinished jobs....
+make[1]: *** [/usr/src/linux-source-6.8.0/linux-source-6.8.0/Makefile:1925: .] Error 2
+make: *** [Makefile:240: __sub-make] Error 2
+  INSTALL /boot
+
+ *** Missing file: arch/x86/boot/bzImage
+ *** You need to run "make" before "make install".
+
+make[1]: *** [arch/x86/Makefile:295: install] Error 1
+make: *** [Makefile:240: __sub-make] Error 2
+root@PRED:/usr/src/linux-source-6.8.0/linux-source-6.8.0# 
+
+This looks familiar:
+
+make[3]: *** No rule to make target 'debian/canonical-certs.pem', needed by 'certs/x509_certificate_list'.  Stop.
+
+Are we going to have to do something about this now?
+
+////////////////////////////////
+
+Disable Certificate Signing
+Run this command inside your kernel source directory:
+
+I did this:
+
+scripts/config --disable SYSTEM_TRUSTED_KEYS
+scripts/config --disable SYSTEM_REVOCATION_KEYS
+
+here:
+
+cd /usr/src/linux-source-6.8.0/linux-source-6.8.0
+
+and I ran this:
+
+make clean
+make -j$(nproc) bzImage    # Build the kernel image
+make -j$(nproc) modules    # Build all modules
+make modules_install       # Install the modules
+make -j$(nproc)            # Ensure everything is built
+make install               # Install the kernel
+
+instead of what you proposed:
+
+make clean
+make -j$(nproc) bzImage
+make -j$(nproc) modules
+make modules_install
+make install
+
+I hope it's ok.
+
+It's been doing this for a while:
+
+  HOSTLD  scripts/kconfig/conf
+*
+* Restart config...
+*
+*
+* Certificates for signature checking
+*
+File name or PKCS#11 URI of module signing key (MODULE_SIG_KEY) [certs/signing_key.pem] certs/signing_key.pem
+Type of module signing key to be generated
+> 1. RSA (MODULE_SIG_KEY_TYPE_RSA)
+  2. ECDSA (MODULE_SIG_KEY_TYPE_ECDSA)
+choice[1-2?]: 1
+Provide system-wide ring of trusted keys (SYSTEM_TRUSTED_KEYRING) [Y/?] y
+  Additional X.509 keys for default system keyring (SYSTEM_TRUSTED_KEYS) [] (NEW) 
+
+After (NEW) there's a solid curser-like character.  Should I provide some keyboard input?
+
+/////////////////////////////////////////////
 
 
