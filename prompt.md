@@ -503,14 +503,166 @@ Will that have that modified tun.c in it?  With those print statements and the i
 
 This is very interesting.  Maybe we can quickly program our tap woes away.  We'll have a great time trying anyway, ritht partner?
 
-
-
-
-
-
-
 ////////////////////////////////////////////////////////
 
+The find command run from /usr didn't return anything.  Would it work to somehow run these commands:
+
+cd /usr/src/linux-source-6.8.0/linux-source-6.8.0
+make mrproper  # Clean up kernel source
+make olddefconfig  # Use existing config
+make prepare  # Prepare headers
+make modules_prepare  # Prepare for module compilation
+
+like I did to kick off the load build but put it through grep or something with a | and look for tun?  Would that work?  Not that I'm suggesting I'd do that, but wondering if it would work and maybe give and indication of where tun.ko is.  That find command is one I don't understand and don't trust.
+
+I briefly researched doing stuff like what we're doing now and I learned of an old tool that was good for looking through bodies of code, and not having to use the grep method.  I know it's for finding functions and keywords and names and things in files, not for finding files themselves, but do you have an idea of the tool I'm thinking of and do you think it would be useful or would VSCode and its extensions do the same or better?
+
+This Ubuntu installation was done in an automated way.  Had I done it myself I would have modularized it.  I'm pretty sure we'll have to change it on disk.  Would it be a good idea to go that route right now?
+
+/////////////////////////////////////
+
+Last time I used this:
+
+make mrproper  # Clean up kernel source
+make olddefconfig  # Use existing config
+make prepare  # Prepare headers
+make modules_prepare  # Prepare for module compilation
+
+This time it's this:
+
+make -j$(nproc)  # Compile kernel with all CPU cores
+make modules
+make modules_install
+make install
+
+Now I have these errors:
+
+  CC [M]  kernel/kheaders.o
+make[1]: *** [/usr/src/linux-source-6.8.0/linux-source-6.8.0/Makefile:1925: .] Error 2
+make: *** [Makefile:240: __sub-make] Error 2
+  CALL    scripts/checksyscalls.sh
+  DESCEND objtool
+  INSTALL libsubcmd_headers
+  DESCEND bpf/resolve_btfids
+  INSTALL libsubcmd_headers
+make[3]: *** No rule to make target 'debian/canonical-certs.pem', needed by 'certs/x509_certificate_list'.  Stop.
+make[2]: *** [scripts/Makefile.build:481: certs] Error 2
+make[1]: *** [/usr/src/linux-source-6.8.0/linux-source-6.8.0/Makefile:1925: .] Error 2
+make: *** [Makefile:240: __sub-make] Error 2
+  SYMLINK /lib/modules/6.8.12/build
+make[2]: *** No rule to make target 'modules.order', needed by '/lib/modules/6.8.12/modules.order'.  Stop.
+make[1]: *** [/usr/src/linux-source-6.8.0/linux-source-6.8.0/Makefile:1833: modules_install] Error 2
+make: *** [Makefile:240: __sub-make] Error 2
+  INSTALL /boot
+
+ *** Missing file: arch/x86/boot/bzImage
+ *** You need to run "make" before "make install".
+
+make[1]: *** [arch/x86/Makefile:295: install] Error 1
+make: *** [Makefile:240: __sub-make] Error 2
+root@PRED:/usr/src/linux-source-6.8.0/linux-source-6.8.0# 
+
+I'm guess this is because as we dig down deeper we create the need for more dependencies and because this was send all compiled together the dependencies are no longer present at the place the load building is happening.  Is that right?
+
+Is there a way I can find out what they are all at once and get them all in place at the same time or would it be best to just carry on like this, as a sure-fire method, and eventually uncover all of the dependencies and handle them as they come until we've exhausted them?
+
+/////////////////////////////////
+
+Looks like a linker error:
+
+  CC [M]  fs/xfs/xfs_notify_failure.o
+  LD [M]  fs/xfs/xfs.o
+make[1]: *** [/usr/src/linux-source-6.8.0/linux-source-6.8.0/Makefile:1925: .] Error 2
+make: *** [Makefile:240: __sub-make] Error 2
+root@PRED:/usr/src/linux-source-6.8.0/linux-source-6.8.0# 
+
+/////////////////////////////////////
+
+Last time it said I should run make before make install.  I caught a glimpse of that in the error messages last time.  Should I do:
+
+make -j$(nproc) bzImage
+make -j$(nproc) modules
+make modules_install
+make
+make install
+
+instead of:
+
+make -j$(nproc) bzImage
+make -j$(nproc) modules
+make modules_install
+make install
+
+?
+
+/////////////////////////////////
+
+I ran this:
+
+make -j$(nproc) bzImage    # Build the kernel image
+make -j$(nproc) modules    # Build all modules
+make modules_install       # Install the modules
+make -j$(nproc)            # Build everything (needed before install)
+make install               # Install the kernel
+
+Look at this last little bit of activity on my computer:
+
+  LD [M]  sound/soc/codecs/snd-soc-simple-mux.o
+make[1]: *** [/usr/src/linux-source-6.8.0/linux-source-6.8.0/Makefile:1925: .] Error 2
+make: *** [Makefile:240: __sub-make] Error 2
+  INSTALL /boot
+
+ *** Missing file: arch/x86/boot/bzImage
+ *** You need to run "make" before "make install".
+
+make[1]: *** [arch/x86/Makefile:295: install] Error 1
+make: *** [Makefile:240: __sub-make] Error 2
+root@PRED:/usr/src/linux-source-6.8.0/linux-source-6.8.0# tail -n 30 /usr/src/linux-source-6.8.0/linux-source-6.8.0/build.log
+tail: cannot open '/usr/src/linux-source-6.8.0/linux-source-6.8.0/build.log' for reading: No such file or directory
+root@PRED:/usr/src/linux-source-6.8.0/linux-source-6.8.0# find /usr/src/linux-source-6.8.0/linux-source-6.8.0 -name "build.log"
+root@PRED:/usr/src/linux-source-6.8.0/linux-source-6.8.0# ls
+arch   COPYING  Documentation  fs                          include   ipc      kernel    MAINTAINERS  net     samples   sound   Ubuntu.md  vmlinux-gdb.py
+block  CREDITS  drivers        generic.depmod.log          init      Kbuild   lib       Makefile     README  scripts   tools   usr
+certs  crypto   dropped.txt    generic.inclusion-list.log  io_uring  Kconfig  LICENSES  mm           rust    security  ubuntu  virt
+root@PRED:/usr/src/linux-source-6.8.0/linux-source-6.8.0# vim Makefile 
+
+ I went to do:
+
+ tail -n 30 /usr/src/linux-source-6.8.0/linux-source-6.8.0/build.log
+
+as you can see above and it couldn't find biuld.log.  So I went to look for it and I don't know what directory to look in within this directory:
+
+/usr/src/linux-source-6.8.0/linux-source-6.8.0/
+
+////////////////////////////////
+
+Hey it's currently building.  In the mean time look at these lines that were scrolling by.  Are those the lines I added to tun.c?
+
+drivers/net/tun.c: In function ‘tun_do_read’:
+drivers/net/tun.c:2241:72: error: ‘len’ undeclared (first use in this function)
+ 2241 |         printk(KERN_INFO "TUN: Sending packet to user, length: %zd\n", len);
+      |                                                                        ^~~
+./include/linux/printk.h:429:33: note: in definition of macro ‘printk_index_wrap’
+  429 |                 _p_func(_fmt, ##__VA_ARGS__);                           \
+      |                                 ^~~~~~~~~~~
+drivers/net/tun.c:2241:9: note: in expansion of macro ‘printk’
+ 2241 |         printk(KERN_INFO "TUN: Sending packet to user, length: %zd\n", len);
+      |         ^~~~~~
+drivers/net/tun.c:2241:72: note: each undeclared identifier is reported only once for each function it appears in
+ 2241 |         printk(KERN_INFO "TUN: Sending packet to user, length: %zd\n", len);
+      |                                                                        ^~~
+./include/linux/printk.h:429:33: note: in definition of macro ‘printk_index_wrap’
+  429 |                 _p_func(_fmt, ##__VA_ARGS__);                           \
+      |                                 ^~~~~~~~~~~
+drivers/net/tun.c:2241:9: note: in expansion of macro ‘printk’
+ 2241 |         printk(KERN_INFO "TUN: Sending packet to user, length: %zd\n", len);
+      |         ^~~~~~
+make[4]: *** [scripts/Makefile.build:243: drivers/net/tun.o] Error 1
+make[4]: *** Waiting for unfinished jobs....
+
+//////////////////////////////////////
+
+I think we might have some confusion here.  I'm not so sure I put those changes into the same tun.c that the load build is working on.  I suspect I made the changes in the current kernel version, not my local one.  After all our reloading and stuff I bet I have an old one.  I'm going to use VSCode to get the latest tun.c, and I'll bet it's different.  What the compiler complains about seems to be about 3 lines off of what the editor is displaying.
 
 
 
